@@ -44,3 +44,6 @@ Open http://localhost:5173
 - Database: MongoDB Atlas (free cluster) → copy connection string
 - Backend: Render (root `backend`, start `npm start`, add env vars MONGO_URI, JWT_SECRET)
 - Frontend: Vercel/Netlify (root `frontend`, build `npm run build`, env `VITE_API_URL=https://your-backend.onrender.com`)
+
+## Live Demo
+A standalone demo (HTML/CSS/JS, data saved in the browser) is in the root `index.html` and is hosted with GitHub Pages: https://aj-ashish.github.io/imovies/

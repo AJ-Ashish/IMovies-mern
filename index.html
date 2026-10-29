@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IMovies – Movie ticket booking made simple</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#1b1d2a;--muted:#6b7080;--pri:#e5384f;--bd:#e3e5ee;--ok:#1f9d55;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13141c;--card:#1d1f2b;--text:#f0f1f6;--muted:#9a9fb2;--bd:#2d3040}}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.logo{font-weight:800;font-size:20px;color:var(--pri)}
+nav button,.btn{border:0;background:var(--pri);color:#fff;padding:9px 14px;border-radius:8px;font-size:14px;cursor:pointer}
+nav button.ghost,.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--bd)}
+nav{display:flex;gap:8px;align-items:center}
+main{max-width:900px;margin:0 auto;padding:16px}
+h2{margin:8px 0 14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.poster{height:120px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:44px;margin-bottom:10px}
+.muted{color:var(--muted);font-size:13px}
+input,select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--text);font-size:15px;margin:6px 0 12px}
+.auth{max-width:360px;margin:40px auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+.chip{padding:8px 12px;border-radius:20px;border:1px solid var(--bd);background:var(--card);color:var(--text);cursor:pointer;font-size:14px}
+.chip.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.screen{text-align:center;margin:10px auto 18px;padding:6px;border-radius:50% 50% 0 0/100% 100% 0 0;background:var(--bd);max-width:320px;font-size:12px;color:var(--muted)}
+.seats{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-width:340px;margin:0 auto}
+.seat{aspect-ratio:1;border-radius:6px 6px 3px 3px;border:1px solid var(--bd);background:var(--card);color:var(--text);font-size:11px;cursor:pointer}
+.seat.sel{background:var(--ok);color:#fff;border-color:var(--ok)}
+.seat.taken{background:var(--bd);color:var(--muted);cursor:not-allowed;opacity:.6}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.bar{position:sticky;bottom:env(safe-area-inset-bottom,0px);margin-top:16px}
+.tick{border-left:4px solid var(--pri)}
+.err{color:var(--pri);font-size:13px;min-height:16px}
+</style>
+</head>
+<body>
+<header><div class="logo">🎬 IMovies</div><nav id="nav"></nav></header>
+<main id="app"></main>
+
+<script>
+// ---------- tiny storage helpers (works even if storage is blocked) ----------
+var mem = {};
+function load(k, d){ try{ var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return mem[k] !== undefined ? mem[k] : d; } }
+function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ mem[k] = v; } }
+
+// ---------- data ----------
+var MOVIES = [
+  {id:1,title:"Galaxy Raiders",genre:"Sci-Fi",lang:"English",dur:"2h 15m",price:250,emoji:"🚀",bg:"#6d5dfc33"},
+  {id:2,title:"Dil Ka Safar",genre:"Romance",lang:"Hindi",dur:"2h 30m",price:200,emoji:"💖",bg:"#e5384f33"},
+  {id:3,title:"Mumbai Mafia",genre:"Action",lang:"Hindi",dur:"2h 40m",price:220,emoji:"🔫",bg:"#f59e0b33"},
+  {id:4,title:"Laugh Riot",genre:"Comedy",lang:"Hindi",dur:"2h 05m",price:180,emoji:"😂",bg:"#1f9d5533"},
+  {id:5,title:"Haunted Haveli",genre:"Horror",lang:"Hindi",dur:"1h 55m",price:200,emoji:"👻",bg:"#64748b33"},
+  {id:6,title:"Toon Kingdom",genre:"Animation",lang:"English",dur:"1h 40m",price:150,emoji:"🦁",bg:"#0ea5e933"}
+];
+var TIMES = ["10:00 AM","01:30 PM","05:00 PM","09:00 PM"];
+var ROWS = ["A","B","C","D","E"], COLS = 8;
+
+// ---------- state ----------
+var user = load("im_session", null);
+var view = "home", movie = null, date = "", time = "", picked = [], msg = "";
+
+function users(){ return load("im_users", {}); }
+function bookings(){ return load("im_bookings", []); }
+function today(i){ var d = new Date(); d.setDate(d.getDate()+i); return d.toISOString().slice(0,10); }
+function key(){ return movie.id+"|"+date+"|"+time; }
+function takenSeats(){ var all = bookings().filter(function(b){ return b.key === key(); }), t = [];
+  all.forEach(function(b){ t = t.concat(b.seats); });
+  // a few pre-booked seats so it looks real
+  var seed = (movie.id*7 + TIMES.indexOf(time)*3) % 40; t.push(ROWS[seed%5]+((seed%8)+1), ROWS[(seed+2)%5]+(((seed*3)%8)+1));
+  return t; }
+function go(v){ view = v; msg = ""; render(); window.scrollTo(0,0); }
+
+// ---------- auth ----------
+function signup(){
+  var n = val("n"), e = val("e").toLowerCase(), p = val("p");
+  if(!n || !e || p.length < 4){ msg = "Enter name, email and a password (min 4 chars)."; return render(); }
+  var u = users(); if(u[e]){ msg = "Email already registered. Please login."; return render(); }
+  u[e] = {name:n, pass:p}; save("im_users", u);
+  user = {name:n, email:e}; save("im_session", user); go("home");
+}
+function login(){
+  var e = val("e").toLowerCase(), p = val("p"), u = users();
+  if(!u[e] || u[e].pass !== p){ msg = "Wrong email or password."; return render(); }
+  user = {name:u[e].name, email:e}; save("im_session", user); go("home");
+}
+function logout(){ user = null; save("im_session", null); go("login"); }
+function val(id){ var el = document.getElementById(id); return el ? el.value.trim() : ""; }
+
+// ---------- actions ----------
+function pick(m){ movie = MOVIES.filter(function(x){ return x.id === m; })[0]; date = today(0); time = TIMES[0]; picked = []; go("book"); }
+function setDate(d){ date = d; picked = []; render(); }
+function setTime(t){ time = t; picked = []; render(); }
+function toggle(s){ var i = picked.indexOf(s); if(i > -1) picked.splice(i,1); else if(picked.length < 6) picked.push(s); render(); }
+function confirmBooking(){
+  var b = bookings();
+  b.unshift({id:"IM"+Date.now().toString().slice(-6), key:key(), email:user.email, title:movie.title, date:date, time:time, seats:picked.slice(), total:picked.length*movie.price});
+  save("im_bookings", b); picked = []; go("mine");
+}
+function cancelBooking(id){ save("im_bookings", bookings().filter(function(b){ return b.id !== id; })); render(); }
+
+// ---------- views ----------
+function render(){
+  var nav = document.getElementById("nav"), app = document.getElementById("app"), h = "";
+  if(!user && view !== "signup") view = "login";
+  nav.innerHTML = user
+    ? '<button class="ghost" onclick="go(\'home\')">Movies</button><button class="ghost" onclick="go(\'mine\')">My Bookings</button><button onclick="logout()">Logout</button>'
+    : '';
+  if(view === "login" || view === "signup"){
+    var su = view === "signup";
+    h += '<div class="card auth"><h2>' + (su ? "Create account" : "Welcome back") + '</h2>' +
+      (su ? '<label>Name</label><input id="n" placeholder="Your name">' : '') +
+      '<label>Email</label><input id="e" type="email" placeholder="you@example.com">' +
+      '<label>Password</label><input id="p" type="password" placeholder="Password">' +
+      '<div class="err">' + msg + '</div>' +
+      '<button class="btn" style="width:100%" onclick="' + (su ? 'signup()' : 'login()') + '">' + (su ? "Sign up" : "Login") + '</button>' +
+      '<p class="muted" style="text-align:center">' + (su ? 'Have an account? <a href="#" onclick="go(\'login\');return false">Login</a>' : 'New here? <a href="#" onclick="go(\'signup\');return false">Sign up</a>') + '</p></div>';
+  } else if(view === "home"){
+    h += '<h2>Now Showing, ' + user.name.split(" ")[0] + '</h2><div class="grid">';
+    MOVIES.forEach(function(m){
+      h += '<div class="card"><div class="poster" style="background:' + m.bg + '">' + m.emoji + '</div><b>' + m.title + '</b>' +
+        '<div class="muted">' + m.genre + ' · ' + m.lang + '</div><div class="muted">' + m.dur + ' · ₹' + m.price + '</div>' +
+        '<button class="btn" style="width:100%;margin-top:10px" onclick="pick(' + m.id + ')">Book Tickets</button></div>';
+    });
+    h += '</div>';
+  } else if(view === "book"){
+    var tk = takenSeats();
+    h += '<button class="btn ghost" onclick="go(\'home\')">← Back</button><h2>' + movie.emoji + ' ' + movie.title + '</h2>' +
+      '<div class="muted">Select date</div><div class="chips">';
+    for(var i = 0; i < 5; i++){ var d = today(i); h += '<button class="chip' + (d === date ? ' on' : '') + '" onclick="setDate(\'' + d + '\')">' + d.slice(5) + '</button>'; }
+    h += '</div><div class="muted">Select showtime</div><div class="chips">';
+    TIMES.forEach(function(t){ h += '<button class="chip' + (t === time ? ' on' : '') + '" onclick="setTime(\'' + t + '\')">' + t + '</button>'; });
+    h += '</div><div class="screen">SCREEN THIS WAY</div><div class="seats">';
+    ROWS.forEach(function(r){ for(var c = 1; c <= COLS; c++){ var s = r + c, cls = tk.indexOf(s) > -1 ? "taken" : (picked.indexOf(s) > -1 ? "sel" : "");
+      h += '<button class="seat ' + cls + '"' + (cls === "taken" ? ' disabled' : ' onclick="toggle(\'' + s + '\')"') + '>' + s + '</button>'; } });
+    h += '</div><p class="muted" style="text-align:center">Grey = booked · Green = your selection (max 6)</p>' +
+      '<div class="card bar row"><div><b>' + (picked.length ? picked.join(", ") : "No seats selected") + '</b><div class="muted">Total: ₹' + (picked.length * movie.price) + '</div></div>' +
+      '<button class="btn" ' + (picked.length ? '' : 'disabled style="opacity:.5"') + ' onclick="confirmBooking()">Confirm Booking</button></div>';
+  } else if(view === "mine"){
+    var mine = bookings().filter(function(b){ return b.email === user.email; });
+    h += '<h2>My Bookings</h2>';
+    if(!mine.length) h += '<p class="muted">No bookings yet. Go book a movie!</p>';
+    mine.forEach(function(b){
+      h += '<div class="card tick" style="margin-bottom:12px"><div class="row"><b>' + b.title + '</b><span class="muted">#' + b.id + '</span></div>' +
+        '<div class="muted">' + b.date + ' · ' + b.time + '</div><div>Seats: ' + b.seats.join(", ") + '</div><div><b>₹' + b.total + '</b></div>' +
+        '<button class="btn ghost" style="margin-top:8px" onclick="cancelBooking(\'' + b.id + '\')">Cancel</button></div>';
+    });
+  }
+  app.innerHTML = h;
+}
+render();
+</script>
+</body>
+</html>
